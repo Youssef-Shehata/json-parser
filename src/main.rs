@@ -1,103 +1,117 @@
 use std::{
-    fmt::{self, Display},
+    fmt::{self},
     fs::File,
-    io::{stderr, BufRead, BufReader, Read},
+    io::{BufRead, BufReader},
 };
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, Ok};
+
+static mut STACK: Vec<Tokens> = <Vec<Tokens>>::new();
 
 enum Errors {
-    ERROR_CORRUPT,
-    UNBALANCED_BRACKETS,
+    FileCorrupt,
+    UnbalancedBrackets,
+}
+fn bail<T>(e: Errors) -> anyhow::Result<T> {
+    anyhow::bail!("{}", e)
 }
 impl fmt::Display for Errors {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Errors::ERROR_CORRUPT => write!(f, " Json File Corrupted"),
-            Errors::UNBALANCED_BRACKETS => write!(f, " Unbalanced brackets in file"),
+            Errors::FileCorrupt => write!(f, " Json File Corrupted"),
+            Errors::UnbalancedBrackets => write!(f, " Unbalanced brackets in file"),
         }
     }
 }
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 enum Tokens {
     OBracket,
     CBracket,
     OArr,
     CArr,
+    Comma,
+}
+struct Pair {
+    key: String,
+    value: Value,
 }
 struct Object {
-    key: String,
-    value: Box<Value>,
+    data: Vec<Pair>,
 }
 enum Value {
     Obj(Object),
     Array(Vec<Value>),
-    Val(f64),
+    Number(f64),
     Text(String),
 }
 
-struct JParser {
-    data: Object,
+#[derive(PartialEq)]
+enum State {
+    Start,
+    Token(Tokens),
+    Object,
+    Success,
 }
-trait Parse {
-    fn parse(&self) -> Object;
-}
-impl Parse for String {
-    fn parse(&self) -> Object {
-        todo!();
+impl State {
+    fn next(&self, reader: &mut BufReader<File>, buf: &mut Vec<u8>) -> anyhow::Result<State> {
+        match self {
+            State::Start => {
+                let n = reader.read_until(b'{', buf).context("reading file")?;
+                if n > 1 && String::from_utf8_lossy(&buf).trim_start() != "{" {
+                    bail(Errors::FileCorrupt)?
+                }
+                Ok(Self::Object)
+            }
+
+            State::Token(t) => {
+                unsafe {
+                    STACK.push(t.clone());
+                };
+                match t {
+                    Tokens::OBracket => Ok(State::Object),
+                    Tokens::CBracket => unsafe {
+                        let p = STACK.pop();
+                        if p.is_none() || p.is_some() && p.unwrap() != Tokens::OBracket {
+                            bail(Errors::UnbalancedBrackets)?
+                        }
+                        Ok(State::Token(Tokens::Comma))
+                    },
+                    Tokens::OArr => Ok(State::Object),
+                    Tokens::CArr => unsafe {
+                        let p = STACK.pop();
+                        if p.is_none() || p.is_some() && p.unwrap() != Tokens::OArr {
+                            bail(Errors::UnbalancedBrackets)?
+                        }
+                        Ok(State::Token(Tokens::Comma))
+                    },
+                    //keep read the next line and decide wether its a key or end of object 
+                    Tokens::Comma => todo!(),
+                }
+            }
+            //read the key , value and store them in the global struct , idk how yet 
+            State::Object => todo!(),
+
+            State::Success => Ok(State::Success),
+        }
     }
 }
 
-impl Parse for File {
-    fn parse(&self) -> Object {
-        todo!();
-        let val = Value::Val(9.0);
-        return Object {
-            key: String::new(),
-            value: Box::new(val),
-        };
-    }
-}
 
 fn main() -> anyhow::Result<()> {
-    let f = File::open("src/examples/oomlanda.txt").context("opening file")?;
+    let f = File::open("examples/oomlanda.txt").context("opening file")?;
 
-    let mut buf = Vec::new();
-    let mut stack = Vec::new();
     let mut reader = BufReader::new(f);
-    let n = reader.read_until(b'{', &mut buf).context("reading file")?;
-    if n > 1 && String::from_utf8_lossy(&buf).trim_start() != "{" {
-        anyhow::bail!("{}", Errors::ERROR_CORRUPT);
-    }
-    stack.push(Tokens::OBracket);
-    buf.clear();
-    reader.read_until(b':', &mut buf).context("reading file")?;
-
-    println!("{}", n);
-
-    if !stack.is_empty() {
-        anyhow::bail!("{}", Errors::UNBALANCED_BRACKETS);
+    let mut s = State::Start;
+    let mut buf = Vec::new();
+    while s != State::Success{
+        s = s.next(&mut reader, &mut buf)?;
     }
 
-    Ok(())
-}
-
-fn parse_token(token: Tokens, stack: &mut Vec<Tokens>) -> anyhow::Result<()> {
-    match token {
-        Tokens::OBracket => stack.push(token),
-        Tokens::CBracket => {
-            let p = stack.pop();
-            if p.is_none() || p.is_some() && p.unwrap() != Tokens::OBracket{
-                anyhow::bail!("{}", Errors::UNBALANCED_BRACKETS);
-            }
-        },
-        Tokens::OArr => stack.push(token),
-        Tokens::CArr => {
-            let p = stack.pop();
-            if p.is_none() || p.is_some() && p.unwrap() != Tokens::OArr {
-                anyhow::bail!("{}", Errors::UNBALANCED_BRACKETS);
-            }
+    unsafe {
+        if !STACK.is_empty() {
+            anyhow::bail!("{}", Errors::UnbalancedBrackets);
         }
     }
     Ok(())
 }
+
