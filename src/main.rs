@@ -2,7 +2,9 @@ mod errors;
 mod tests;
 use crate::errors::{bail, Errors};
 use anyhow::Context;
+use core::fmt;
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufRead, BufReader, Read},
 };
@@ -16,14 +18,39 @@ const COLUMN: u8 = b':';
 const COMMA: u8 = b',';
 
 #[derive(Debug)]
-struct JsonObject {
-    data: Vec<Object>
+struct Object {
+    data: HashMap<String, Box<Value>>,
 }
 
+impl fmt::Display for Object {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for (k, v) in &self.data {
+            write!(f, "{} : {}", k, v)?
+        }
+        Ok(())
+    }
+}
 #[derive(Debug)]
-struct Object{
-    key: String,
-    value: String,
+enum Value {
+    Text(String),
+    Array(Vec<Object>),
+    Obj(Object),
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Value::Text(s) => {
+                write!(f, "{}", s)
+            }
+            Value::Array(vec) => {
+                write!(f, "{:?}", vec)
+            }
+            Value::Obj(object) => {
+                write!(f, "{}", object)
+            }
+        }
+    }
 }
 
 struct Reader<T> {
@@ -35,10 +62,9 @@ where
 {
     fn match_char(&mut self, char: u8) -> anyhow::Result<()> {
         let mut buf = Vec::new();
-        self.r.read_until(char, &mut buf)?;
+        self.r.read_until(char, &mut buf).context("match_char")?;
         trim_spaces(&mut buf);
         if buf.len() == 0 {
-
             bail(Errors::NotFound)?
         }
         if char != buf[0] {
@@ -64,46 +90,56 @@ where
         Ok(String::from_utf8_lossy(&buf[..buf.len() - 1]).to_string())
     }
 
-    fn read_value(&mut self) -> anyhow::Result<String> {
+    fn read_value(&mut self) -> anyhow::Result<Value> {
         let mut buf = Vec::new();
-        self.match_char(QOUTE)?;
+        let read = self.next_char()?;
+        match read {
+            QOUTE => {
+                self.r.read_until(QOUTE, &mut buf)?;
+                Ok(Value::Text(
+                    String::from_utf8_lossy(&buf[..buf.len() - 1]).to_string(),
+                ))
+            }
 
-        self.r.read_until(QOUTE, &mut buf)?;
+            O_BRAC => {
+                let obj = self.read_object()?;
+                Ok(Value::Obj(obj))
+            }
+
+            O_ARR => {
+                todo!();
+            }
+            _ => bail(Errors::CorruptFile)?,
+        }
 
         //self.match_char(COMMA)?;
-
-        Ok(String::from_utf8_lossy(&buf[..buf.len() - 1]).to_string())
     }
 
-    fn read_object(&mut self) -> anyhow::Result<JsonObject> {
-        let mut j = JsonObject{data:Vec::new()};
-        self.match_char(O_BRAC)?;
-        
+    fn read_object(&mut self) -> anyhow::Result<Object> {
+        let mut j = Object {
+            data: HashMap::new(),
+        };
         loop {
             let key = self.read_key()?;
             let value = self.read_value()?;
-
-            println!("{:?} : {:?}", key, value);
-            j.data.push(Object{key,value});
-            println!("");
+            j.data.insert(key, Box::new(value));
 
             let read = self.next_char()?;
 
             match read {
+                COMMA => {} //continue
                 C_BRAC => {
                     break;
                 }
-                COMMA => {}//continue
                 _ => bail(Errors::CorruptFile)?,
             }
         }
-
         Ok(j)
     }
     fn next_char(&mut self) -> anyhow::Result<u8> {
         let mut buf = [b' '; 1];
         while buf[0] == b' ' || buf[0] == b'\n' || buf[0] == b'\t' {
-            self.r.read_exact(&mut buf)?;
+            self.r.read_exact(&mut buf).context("next_char")?;
         }
         Ok(buf[0])
     }
@@ -112,15 +148,18 @@ fn trim_spaces(buffer: &mut Vec<u8>) {
     buffer.retain(|x| *x != b' ' && *x != b'\n' && *x != b'\t');
     buffer.retain(|x| *x != b' ');
 }
+
+
+
+
+
 fn main() -> anyhow::Result<()> {
-    let f = File::open("examples/oomlanda.txt").context("opening file")?;
+    let f = File::open("examples/oomlanda.json").context("opening file")?;
     let r = BufReader::new(f);
     let mut reader = Reader { r };
 
-    loop {
-       let j =  reader.read_object()?;
-       println!("OBJECCCCCCCCCCTOOOOO : {:?}" ,j);
-    }
-    //println!("{:?} : {:?}", k, v);
+    reader.match_char(O_BRAC)?;
+    let j = reader.read_object()?;
+    println!("{:?}", j);
     Ok(())
 }

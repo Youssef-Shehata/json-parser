@@ -15,7 +15,7 @@ impl fmt::Display for Errors {
             Errors::CorruptFile => write!(f, " Json File Corrupted"),
             Errors::UnbalancedBrackets => write!(f, " Unbalanced brackets in file"),
             Errors::NotFound=> write!(f, " Expected Token Wasn't Found"),
-            Errors::EOF=> write!(f, " End Of File"),
+            Errors::EOF=> write!(f, " Token Wasn't Found"),
         }
     }
 }
