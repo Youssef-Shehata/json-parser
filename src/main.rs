@@ -1,117 +1,68 @@
+mod errors;
+mod tests;
+use anyhow::{Context, Error, Ok};
 use std::{
-    fmt::{self},
-    fs::File,
-    io::{BufRead, BufReader},
+    fmt::{self, format}, fs::File, io::{BufRead, BufReader, Cursor, Read}, 
 };
+use crate::errors::{Errors, bail};
 
-use anyhow::{Context, Ok};
+const O_BRAC: u8 = b'{';
+const C_BRAC: u8 = b'}';
+const O_ARR: u8 = b'[';
+const C_ARR: u8 = b']';
+const QOUTE: u8 = b'"';
+const COLUMN: u8 = b':';
+const COMMA: u8 = b',';
 
-static mut STACK: Vec<Tokens> = <Vec<Tokens>>::new();
-
-enum Errors {
-    FileCorrupt,
-    UnbalancedBrackets,
-}
-fn bail<T>(e: Errors) -> anyhow::Result<T> {
-    anyhow::bail!("{}", e)
-}
-impl fmt::Display for Errors {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Errors::FileCorrupt => write!(f, " Json File Corrupted"),
-            Errors::UnbalancedBrackets => write!(f, " Unbalanced brackets in file"),
-        }
-    }
-}
-#[derive(PartialEq, Clone)]
-enum Tokens {
-    OBracket,
-    CBracket,
-    OArr,
-    CArr,
-    Comma,
-}
-struct Pair {
-    key: String,
-    value: Value,
-}
-struct Object {
-    data: Vec<Pair>,
-}
-enum Value {
-    Obj(Object),
-    Array(Vec<Value>),
-    Number(f64),
-    Text(String),
+#[derive(Debug)]
+enum Things{
+    Key(String),
+    Value(String),
 }
 
-#[derive(PartialEq)]
-enum State {
-    Start,
-    Token(Tokens),
-    Object,
-    Success,
-}
-impl State {
-    fn next(&self, reader: &mut BufReader<File>, buf: &mut Vec<u8>) -> anyhow::Result<State> {
-        match self {
-            State::Start => {
-                let n = reader.read_until(b'{', buf).context("reading file")?;
-                if n > 1 && String::from_utf8_lossy(&buf).trim_start() != "{" {
-                    bail(Errors::FileCorrupt)?
-                }
-                Ok(Self::Object)
-            }
-
-            State::Token(t) => {
-                unsafe {
-                    STACK.push(t.clone());
-                };
-                match t {
-                    Tokens::OBracket => Ok(State::Object),
-                    Tokens::CBracket => unsafe {
-                        let p = STACK.pop();
-                        if p.is_none() || p.is_some() && p.unwrap() != Tokens::OBracket {
-                            bail(Errors::UnbalancedBrackets)?
-                        }
-                        Ok(State::Token(Tokens::Comma))
-                    },
-                    Tokens::OArr => Ok(State::Object),
-                    Tokens::CArr => unsafe {
-                        let p = STACK.pop();
-                        if p.is_none() || p.is_some() && p.unwrap() != Tokens::OArr {
-                            bail(Errors::UnbalancedBrackets)?
-                        }
-                        Ok(State::Token(Tokens::Comma))
-                    },
-                    //keep read the next line and decide wether its a key or end of object 
-                    Tokens::Comma => todo!(),
-                }
-            }
-            //read the key , value and store them in the global struct , idk how yet 
-            State::Object => todo!(),
-
-            State::Success => Ok(State::Success),
-        }
-    }
-}
-
-
-fn main() -> anyhow::Result<()> {
-    let f = File::open("examples/oomlanda.txt").context("opening file")?;
-
-    let mut reader = BufReader::new(f);
-    let mut s = State::Start;
-    let mut buf = Vec::new();
-    while s != State::Success{
-        s = s.next(&mut reader, &mut buf)?;
-    }
-
-    unsafe {
-        if !STACK.is_empty() {
-            anyhow::bail!("{}", Errors::UnbalancedBrackets);
-        }
+fn match_char(expected: u8, c: u8) -> anyhow::Result<()>{
+    if c != expected {
+        bail(Errors::CorruptFile)?
     }
     Ok(())
 }
 
+fn trim_spaces(buffer : &mut Vec<u8>){
+    buffer.retain(|x| *x != b' ' );
+}
+fn read_column(reader: &mut BufReader<File>)->anyhow::Result<()>{
+    let mut buf = Vec::new();
+    reader.read_until(COLUMN , &mut buf)?;
+    trim_spaces(&mut buf);
+    if buf[0] != b':'{
+        bail(Errors::CorruptFile)?
+    }
+    Ok(())
+}
+fn read_key(reader: &mut BufReader<File>) -> anyhow::Result<String> {
+    let mut buf = Vec::new();
+    reader.read_until(QOUTE, &mut buf)?;
+    trim_spaces(&mut buf);
+    match_char(QOUTE, buf[0])?;
+
+    buf.clear();
+
+    reader.read_until(QOUTE, &mut buf)?;
+    read_column(reader)?;
+    buf.remove(buf.len()-1);
+    Ok(String::from_utf8_lossy(&buf).to_string())
+
+}
+
+fn main() -> anyhow::Result<()> {
+    let f = File::open("examples/oomlanda.txt").context("opening file")?;
+    let mut reader = BufReader::new(f);
+    let mut result :Vec<Things>= Vec::new();
+    let key = read_key(&mut reader)?;
+    result.push(Things::Key(key));
+
+
+
+    print!("things :: {:?}" , result);
+    Ok(())
+}
