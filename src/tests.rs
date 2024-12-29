@@ -1,20 +1,23 @@
-
-
 #[cfg(test)]
 pub mod exact {
-    use std::{fs::File, io::{BufReader, Cursor}};
-
-    use crate::read_key;
-
+    use crate::parse_json;
 
     #[test]
-    fn test_keys() {
-        let mut f = File::open("test_data/keys").expect("couldnt open file");
-        let mut reader = BufReader::new(f);
-        read_key(&mut reader);
-        assert!(false)
+    fn simple_obj() {
+        let json_str = r#"
+        {
+            "name": "youssef",
+            "age": "22"
+        }
+            "#;
 
+        match parse_json(json_str) {
+            Ok(json_value) => {
+                println!("{:?}", json_value);
+
+                assert_eq!(json_value.to_string(), "{\"name\":\"youssef\",\"age\":\"22\"}");
+            }
+            Err(e) => eprintln!("Error: {}", e),
+        }
     }
-
 }
-
