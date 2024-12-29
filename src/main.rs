@@ -25,7 +25,8 @@ impl JsonValue {
                 format!("[{}]", elements.join(","))
             }
             JsonValue::Object(obj) => {
-                let members: Vec<String> = obj.iter()
+                let members: Vec<String> = obj
+                    .iter()
                     .map(|(k, v)| format!("\"{}\":{}", k, v.to_string()))
                     .collect();
                 format!("{{{}}}", members.join(","))
@@ -113,7 +114,7 @@ fn parse_string<I: Iterator<Item = char>>(
     chars: &mut std::iter::Peekable<I>,
 ) -> Result<JsonValue, String> {
     let mut s = String::new();
-    chars.next(); 
+    chars.next();
     while let Some(c) = chars.next() {
         match c {
             '"' => return Ok(JsonValue::String(s)),
@@ -133,13 +134,32 @@ fn parse_bool<I: Iterator<Item = char>>(
 fn parse_null<I: Iterator<Item = char>>(
     chars: &mut std::iter::Peekable<I>,
 ) -> Result<JsonValue, String> {
-    todo!()
+    if chars.next() == Some('n')
+        && chars.next() == Some('u')
+        && chars.next() == Some('l')
+        && chars.next() == Some('l')
+    {
+        Ok(JsonValue::Null)
+    } else {
+        Err("Invalid null".to_string())
+    }
 }
 
 fn parse_number<I: Iterator<Item = char>>(
     chars: &mut std::iter::Peekable<I>,
 ) -> Result<JsonValue, String> {
-    todo!()
+    let mut s = String::new();
+    while let Some(&c) = chars.peek() {
+        if c.is_digit(10) || c == '.' || c == 'e' || c == '-' || c == '+' {
+            s.push(chars.next().unwrap());
+        } else {
+            break;
+        }
+    }
+
+    s.parse::<f64>()
+        .map(JsonValue::Number)
+        .map_err(|_| "Invalid number".to_string())
 }
 
 fn main() {

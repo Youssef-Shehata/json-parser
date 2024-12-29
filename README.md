@@ -7,6 +7,7 @@ This is a simple library that parses json files or text into usable rust objects
 - Parses JSON strings into a `JsonValue` enum.
 - Supports JSON data types: `null`, `boolean`, `number`, `string`, `array`, and `object`.
 - Includes error handling for invalid JSON strings.
+- Serializes `JsonValue` enum back into JSON strings.
 
 ## Usage
 
