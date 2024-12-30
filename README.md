@@ -2,6 +2,10 @@
 
 This is a simple library that parses json files or text into usable rust objects, its still in development and not ready for production use.
 
+## bugs 
+
+- currently the when serializing back to strings the order of key value pairs changes due to how rust maps work.
+
 ## Features
 
 - Parses JSON strings into a `JsonValue` enum.

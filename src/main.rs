@@ -50,6 +50,7 @@ fn parse_value<I: Iterator<Item = char>>(
         Some('t') | Some('f') => parse_bool(chars),
         Some('n') => parse_null(chars),
         Some(c) if c.is_digit(10) || *c == '-' => parse_number(chars),
+
         _ => Err("Unexpected character".to_string()),
     }
 }
@@ -107,7 +108,29 @@ fn parse_object<I: Iterator<Item = char>>(
 fn parse_array<I: Iterator<Item = char>>(
     chars: &mut std::iter::Peekable<I>,
 ) -> Result<JsonValue, String> {
-    todo!()
+    let mut array = Vec::new();
+    chars.next();
+    skip_whitespace(chars);
+    if chars.peek() == Some(&']') {
+        chars.next();
+
+        return Ok(JsonValue::Array(array));
+    }
+    loop {
+        skip_whitespace(chars);
+        let value = parse_value(chars)?;
+
+        array.push(value);
+        skip_whitespace(chars);
+        match chars.next() {
+            Some(']') => break,
+
+            Some(',') => continue,
+
+            _ => return Err("Expected ',' or ']'".to_string()),
+        }
+    }
+    Ok(JsonValue::Array(array))
 }
 
 fn parse_string<I: Iterator<Item = char>>(
@@ -128,7 +151,27 @@ fn parse_string<I: Iterator<Item = char>>(
 fn parse_bool<I: Iterator<Item = char>>(
     chars: &mut std::iter::Peekable<I>,
 ) -> Result<JsonValue, String> {
-    todo!()
+    match chars.next() {
+        Some('t') => {
+            if chars.next() == Some('r') && chars.next() == Some('u') && chars.next() == Some('e') {
+                Ok(JsonValue::Bool(true))
+            } else {
+                Err("Invalid boolean".to_string())
+            }
+        }
+        Some('f') => {
+            if chars.next() == Some('a')
+                && chars.next() == Some('l')
+                && chars.next() == Some('s')
+                && chars.next() == Some('e')
+            {
+                Ok(JsonValue::Bool(false))
+            } else {
+                Err("Invalid boolean".to_string())
+            }
+        }
+        _ => Err("Invalid boolean".to_string()),
+    }
 }
 
 fn parse_null<I: Iterator<Item = char>>(
